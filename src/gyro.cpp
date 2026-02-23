@@ -7,11 +7,10 @@
  *
  *
  * @group Members:
- * - Xhovani Mali 
- * - Shruti Pangare 
- * - Temira Koenig 
+ * - Xhovani Mali
+ * - Shruti Pangare
+ * - Temira Koenig
  */
-
 
 #include "gyro.h"
 
@@ -50,16 +49,15 @@ void GetGyroValue(Gyroscope_RawData *rawdata)
     cs = 1;
 }
 
-// Calibrate gyroscope before recording
-// Find the "turn-on" zero rate level
-// Set up thresholds for three axes
-// Data below the corresponding threshold will be treated as zero to offset random vibrations when walking
+// Calibrate gyroscope before recording.
+// Samples 128 readings to determine the zero-rate level (bias) and peak noise
+// threshold for each axis. Data below the threshold is treated as zero to
+// suppress ambient vibration.
 void CalibrateGyroscope(Gyroscope_RawData *rawdata)
 {
     int16_t sumX = 0;
     int16_t sumY = 0;
     int16_t sumZ = 0;
-    printf("========[Calibrating...]========\r\n");
     for (int i = 0; i < 128; i++)
     {
         GetGyroValue(rawdata);
@@ -75,22 +73,19 @@ void CalibrateGyroscope(Gyroscope_RawData *rawdata)
     x_sample = sumX >> 7; // 128 is 2^7
     y_sample = sumY >> 7;
     z_sample = sumZ >> 7;
-    printf("========[Calibration finish.]========\r\n");
 }
 
 // Initiate gyroscope, set up control registers
 void InitiateGyroscope(Gyroscope_Init_Parameters *init_parameters, Gyroscope_RawData *init_raw_data)
 {
-    printf("\r\n========[Initializing gyroscope...]========\r\n");
     gyro_raw = init_raw_data;
     cs = 1;
-    // set up gyroscope
     gyroscope.format(8, 3);       // 8 bits per SPI frame; polarity 1, phase 0
-    gyroscope.frequency(1000000); // clock frequency deafult 1 MHz max:10MHz
+    gyroscope.frequency(1000000); // 1 MHz clock (max: 10 MHz)
 
-    WriteByte(CTRL_REG_1, init_parameters->conf1 | POWERON); // set ODR Bandwidth and enable all 3 axises
+    WriteByte(CTRL_REG_1, init_parameters->conf1 | POWERON); // set ODR, bandwidth, enable all axes
     WriteByte(CTRL_REG_3, init_parameters->conf3);           // DRDY enable
-    WriteByte(CTRL_REG_4, init_parameters->conf4);           // LSB, full sacle selection: 500dps
+    WriteByte(CTRL_REG_4, init_parameters->conf4);           // full-scale selection
 
     switch (init_parameters->conf4)
     {
@@ -111,47 +106,26 @@ void InitiateGyroscope(Gyroscope_Init_Parameters *init_parameters, Gyroscope_Raw
             break;
     }
 
-    CalibrateGyroscope(gyro_raw); // calibrate the gyroscope and find the threshold for x, y, and z.
-    printf("========[Initiation finish.]========\r\n");
+    CalibrateGyroscope(gyro_raw);
 }
 
-// convert raw data to dps
+// Convert raw ADC value to degrees per second
 float ConvertToDPS(int16_t axis_data)
 {
-    float dps = axis_data * sensitivity;
-    return dps;
+    return axis_data * sensitivity;
 }
 
-// convert dps to linear velocity
-float ConvertToVelocity(int16_t axis_data)
-{
-    float velocity = axis_data * sensitivity * DEGREE_TO_RAD * MY_LEG;
-    return velocity;
-}
-
-// Calculate distance from raw data array;
-float GetDistance(int16_t arr[])
-{
-    float distance = 0.00f;
-    for (int i = 0; i < 400; i++)
-    {
-        float v = ConvertToVelocity(arr[i]);
-        distance += abs(v * 0.05f);
-    }
-    return distance;
-}
-
-// convert raw data to calibrated data directly
+// Apply bias offset and noise threshold, writing calibrated values back to gyro_raw
 void GetCalibratedRawData()
 {
     GetGyroValue(gyro_raw);
 
-    // offset the zero rate level
+    // Subtract the zero-rate level bias
     gyro_raw->x_raw -= x_sample;
     gyro_raw->y_raw -= y_sample;
     gyro_raw->z_raw -= z_sample;
 
-    // put data below threshold to zero
+    // Zero out readings below the noise threshold
     if (abs(gyro_raw->x_raw) < abs(x_threshold))
         gyro_raw->x_raw = 0;
     if (abs(gyro_raw->y_raw) < abs(y_threshold))
@@ -160,7 +134,7 @@ void GetCalibratedRawData()
         gyro_raw->z_raw = 0;
 }
 
-// turn off the gyroscope
+// Turn off the gyroscope
 void PowerOff()
 {
     WriteByte(CTRL_REG_1, 0x00);
